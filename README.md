@@ -1,16 +1,37 @@
-# uinlp_annotate
 
-A new Flutter project.
+# UINLP Annotate
+
+A Flutter application for annotation tasks in natural language processing.
+
+## Features
+
+- User-friendly annotation interface
+- Support for multiple annotation types
+- Data export functionality
+- Offline capability
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prerequisites
 
-A few resources to get you started if this is your first Flutter project:
+- Flutter SDK
+- Dart
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Installation
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter pub get
+flutter run
+```
+
+## Usage
+
+Launch the app and follow the on-screen instructions to begin annotating data.
+
+## Contributing
+
+Contributions are welcome. Please fork the repository and submit pull requests.
+
+## License
+
+This project is licensed under the MIT License.
