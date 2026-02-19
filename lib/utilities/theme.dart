@@ -82,7 +82,7 @@ ThemeData _baseTheme(ColorScheme scheme) {
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: scheme.inverseSurface,
-      contentTextStyle: TextStyle(color: scheme.onSurface),
+      contentTextStyle: TextStyle(color: scheme.onInverseSurface),
       behavior: SnackBarBehavior.floating,
     ),
     visualDensity: VisualDensity.adaptivePlatformDensity,

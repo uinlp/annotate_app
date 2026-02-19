@@ -21,7 +21,7 @@ class AnnotateEditorScreen extends StatefulWidget {
 class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
   List<AnnotateFieldStateModel> fields = [];
   String? taskId;
-  int currentDataIndex = 0;
+  ValueNotifier<int> currentDataIndex = ValueNotifier(0);
 
   @override
   void initState() {
@@ -48,35 +48,115 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
               .toList();
         }
       });
+
+      loadCurrentDataAnnotations();
+
+      currentDataIndex.addListener(() {
+        debugPrint("Current data index changed: ${currentDataIndex.value}");
+        loadCurrentDataAnnotations();
+      });
     });
+  }
+
+  void loadCurrentDataAnnotations() {
+    final state = context.read<AnnotateTaskBloc>().state;
+    final task = state.tasks.where((e) => e.id == taskId).firstOrNull;
+    if (task == null) return;
+    final dataId = task.dataIds[currentDataIndex.value];
+    final commitData = task.commits[dataId];
+    for (var field in fields) {
+      if (field.type == AnnotateModalityEnum.text) {
+        field.textController?.text = commitData?[field.name] ?? "";
+      } else if (field.type == AnnotateModalityEnum.audio) {
+        field.audioCachePath?.value =
+            commitData?[field.name] ?? "media/${field.name}/$dataId.wav";
+      }
+    }
   }
 
   void goto(int index) {
-    setState(() {
-      currentDataIndex = index;
-    });
+    currentDataIndex.value = index;
   }
 
   void next() {
-    final totalData = context.read<AnnotateTaskBloc>().state.tasks
+    final totalData = context
+        .read<AnnotateTaskBloc>()
+        .state
+        .tasks
         .where((e) => e.id == taskId)
         .firstOrNull
         ?.dataIds
         .length;
     if (totalData == null) return;
-    if (currentDataIndex < (totalData - 1)) {
-      setState(() {
-        currentDataIndex += 1;
-      });
+    if (currentDataIndex.value < (totalData - 1)) {
+      currentDataIndex.value += 1;
     }
   }
 
   void previous() {
-    if (currentDataIndex > 0) {
-      setState(() {
-        currentDataIndex -= 1;
-      });
+    if (currentDataIndex.value > 0) {
+      currentDataIndex.value -= 1;
     }
+  }
+
+  Future<bool> saveCurrentAnnotations() async {
+    final task = context
+        .read<AnnotateTaskBloc>()
+        .state
+        .tasks
+        .where((e) => e.id == taskId)
+        .firstOrNull;
+    if (task == null) return false;
+    Map<String, dynamic> commitData = {};
+    for (var field in fields) {
+      if (field.type == AnnotateModalityEnum.text) {
+        if (field.textController == null || field.textController!.text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Field '${field.name}' cannot be empty."),
+            ),
+          );
+          return false;
+        }
+        commitData[field.name] = field.textController?.text ?? "";
+      } else if (field.type == AnnotateModalityEnum.audio) {
+        if (field.audioCachePath == null ||
+            field.audioCachePath!.value.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Audio for field '${field.name}' is missing."),
+            ),
+          );
+          return false;
+        }
+        commitData[field.name] = field.audioCachePath?.value ?? "";
+      }
+    }
+    await task.updateCommit(task.dataIds[currentDataIndex.value], commitData);
+    return true;
+  }
+
+  bool canBePublished() {
+    // can be published if all data items are annotated. i.e progress == 1.0
+    if (!mounted) return false;
+    final task = context
+        .read<AnnotateTaskBloc>()
+        .state
+        .tasks
+        .where((e) => e.id == taskId)
+        .firstOrNull;
+    if (task == null) return false;
+    return task.progress >= 1.0;
+  }
+
+  @override
+  void dispose() {
+    currentDataIndex.dispose();
+    for (var field in fields) {
+      field.textController?.dispose();
+      field.audioCachePath?.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -84,7 +164,12 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text("Annotate Editor [${currentDataIndex + 1}]"),
+        title: ValueListenableBuilder(
+          valueListenable: currentDataIndex,
+          builder: (context, value, child) {
+            return Text("Annotate Editor [${currentDataIndex.value + 1}]");
+          }
+        ),
         actions: [
           Builder(
             builder: (context) {
@@ -108,7 +193,15 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Data display area
-            DataDisplay(taskId: taskId, currentDataIndex: currentDataIndex),
+            ValueListenableBuilder(
+              valueListenable: currentDataIndex,
+              builder: (context, value, child) {
+                return DataDisplay(
+                  taskId: taskId,
+                  currentDataIndex: currentDataIndex.value,
+                );
+              }
+            ),
             for (var field in fields)
               // Text(field.name),
               if (field.type == AnnotateModalityEnum.text)
@@ -139,16 +232,22 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
           ],
         ),
       ),
-      drawer: AnnotatedEditorDrawer(
-        taskId: taskId,
-        currentDataIndex: currentDataIndex,
-        onDataIndexPressed: (index) {
-          goto(index);
-          context.pop();
-        },
+      drawer: ValueListenableBuilder(
+        valueListenable: currentDataIndex,
+        builder: (context, value, child) {
+          return AnnotatedEditorDrawer(
+            taskId: taskId,
+            currentDataIndex: currentDataIndex.value,
+            onDataIndexPressed: (index) {
+              goto(index);
+              context.pop();
+            },
+          );
+        }
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
+          final enablePublish = canBePublished();
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
@@ -161,7 +260,10 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
                   ListTile(
                     leading: Icon(Icons.save),
                     title: Text("Save"),
-                    onTap: () {},
+                    onTap: () {
+                      saveCurrentAnnotations();
+                      context.pop();
+                    },
                   ),
                   ListTile(
                     leading: Icon(Icons.arrow_forward),
@@ -180,17 +282,30 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
                     },
                   ),
                   ListTile(
-                    leading: Icon(Icons.logout),
-                    title: Text("Save & Exit"),
+                    leading: Icon(Icons.logout_sharp),
+                    title: Text("Exit"),
                     onTap: () {
                       context.goNamed(DashboardScreen.routeName);
                     },
                   ),
                   ListTile(
+                    leading: Icon(Icons.logout),
+                    title: Text("Save & Exit"),
+                    onTap: () async {
+                      final saved = await saveCurrentAnnotations();
+                      context.pop();
+                      if (saved) {
+                        context.goNamed(DashboardScreen.routeName);
+                      }
+                    },
+                  ),
+                  ListTile(
                     leading: Icon(Icons.publish),
                     title: Text("Publish"),
-                    onTap: () {},
-                    enabled: false,
+                    onTap: () {
+                      context.pop();
+                    },
+                    enabled: enablePublish,
                   ),
                 ],
               );
@@ -215,8 +330,11 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
             BottomActionButton(
               icon: Icons.arrow_forward,
               label: "Save & Next",
-              onPressed: () {
-                next();
+              onPressed: () async {
+                final saved = await saveCurrentAnnotations();
+                if (saved) {
+                  next();
+                }
               },
             ),
           ],
@@ -286,11 +404,12 @@ class AnnotatedEditorDrawer extends StatelessWidget {
                                   : theme.colorScheme.primary.withAlpha(25),
                               foregroundColor:
                                   task.commits.containsKey(task.dataIds[index])
-                                  ? theme.colorScheme.primary.withAlpha(25)
+                                  ? theme.colorScheme.onPrimary
                                   : theme.colorScheme.primary,
                               side: currentDataIndex == index
                                   ? BorderSide(
                                       color: theme.colorScheme.secondary,
+                                      width: 2,
                                     )
                                   : BorderSide.none,
                               padding: EdgeInsets.zero,
@@ -298,10 +417,7 @@ class AnnotatedEditorDrawer extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                            child: Tooltip(
-                              message: task.dataIds[index],
-                              child: Text("${index + 1}"),
-                            ),
+                            child: Text("${index + 1}"),
                           );
                         },
                       );
@@ -445,7 +561,7 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                         ),
                         child: Icon(
                           getTypeIcon(task!.type),
-                          color: getTypeColor(task!.type),
+                          color: getTypeColor(task.type),
                           size: 28,
                         ),
                       ),
@@ -500,7 +616,7 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: LinearProgressIndicator(
-                          value: task!.progress,
+                          value: task.progress,
                           minHeight: 12,
                           backgroundColor:
                               theme.colorScheme.surfaceContainerHighest,
@@ -509,7 +625,7 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "${(task!.progress * 100).toInt()}% Completed",
+                        "${(task.progress * 100).toInt()}% Completed",
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -555,9 +671,25 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 24),
+                      _buildSectionHeader(theme, "Tags"),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (var tag in task.tags)
+                            Chip(
+                              label: Text(tag.toTitleCase()),
+                              side: BorderSide(
+                                color: theme.colorScheme.outlineVariant,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
                       _buildSectionHeader(theme, "Input Fields"),
                       const SizedBox(height: 12),
-                      for (var field in task!.annotateFields)
+                      for (var field in task.annotateFields)
                         Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           elevation: 0,
@@ -636,13 +768,13 @@ class AnnotateFieldStateModel extends AnnotateFieldModel {
     required super.type,
     required super.description,
     TextEditingController? textController,
-    String? audioCachePath,
+    ValueNotifier<String>? audioCachePath,
   }) : textController = type == AnnotateModalityEnum.text
            ? (textController ?? TextEditingController())
            : null,
        audioCachePath = type == AnnotateModalityEnum.audio
-           ? (audioCachePath ?? "cache/$name.wav")
+           ? (audioCachePath ?? ValueNotifier<String>("cache/$name.wav"))
            : null;
   final TextEditingController? textController;
-  final String? audioCachePath;
+  final ValueNotifier<String>? audioCachePath;
 }

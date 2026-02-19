@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:uinlp_annotate_repository/repositories/base.dart';
 
 enum TaskStatusEnum { todo, inProgress, completed }
@@ -63,13 +65,11 @@ class AnnotateTaskModel {
   final TaskStatusEnum status;
   final List<String> dataIds;
   final DateTime lastUpdated;
-  final AnnotateModalityEnum dataType;
-  final String dataPath;
   final List<AnnotateFieldModel> annotateFields;
   final Map<String, Map<String, dynamic>> commits;
   final List<String> tags;
 
-  const AnnotateTaskModel({
+  AnnotateTaskModel({
     required this.id,
     required this.dataId,
     required this.title,
@@ -78,20 +78,35 @@ class AnnotateTaskModel {
     required this.status,
     required this.dataIds,
     required this.lastUpdated,
-    required this.dataType,
-    this.dataPath = 'data',
     required this.annotateFields,
-    this.commits = const {},
+    Map<String, Map<String, dynamic>>? commits,
     this.tags = const [],
-  });
+  }) : commits = commits ?? {};
 
-  double get progress => commits.isEmpty ? 0.0 : (commits.length / dataIds.length);
+  double get progress =>
+      commits.isEmpty ? 0.0 : (commits.length / dataIds.length);
 
   Future<String> retrieveDataFileValue(int dataIndex) async {
     final workingDir = await getWorkspaceDirectory();
-    print("Working directory: ${workingDir.listSync().map((e) => e.path).toList()}");
-    final file = File("${workingDir.path}/$id/$dataPath/${dataIds[dataIndex]}");
+    print(
+      "Working directory: ${workingDir.listSync().map((e) => e.path).toList()}",
+    );
+    final file = File("${workingDir.path}/$id/data/${dataIds[dataIndex]}");
     return file.readAsStringSync();
+  }
+
+  Future<void> updateCommit(String dataId, Map<String, dynamic> commitData) async {
+    // commits[dataId] = commitData;
+    commits.update(dataId, (value) => commitData, ifAbsent: () => commitData);
+    // Save task file asynchronously
+    // compute((dynamic _) => saveTaskFile(), null); // avoid blocking UI
+    await saveTaskFile();
+  }
+
+  Future<void> saveTaskFile() async {
+    final workingDir = await getWorkspaceDirectory();
+    final taskFile = File("${workingDir.path}/$id/task.json");
+    await taskFile.writeAsString(jsonEncode(toJson()));
   }
 
   factory AnnotateTaskModel.fromJson(Map<String, dynamic> json) {
@@ -111,16 +126,12 @@ class AnnotateTaskModel {
           ? Map<String, Map<String, dynamic>>.from(json['commits'])
           : {},
       lastUpdated: DateTime.parse(json['last_updated']),
-      dataType: modalityFromString(json['data_type']),
-      dataPath: json['data_path'] ?? 'data',
       annotateFields: json['annotate_fields']
           .map<AnnotateFieldModel>(
             (field) => AnnotateFieldModel.fromJson(field),
           )
           .toList(),
-      tags: json['tags'] != null
-          ? List<String>.from(json['tags'])
-          : [],
+      tags: json['tags'] != null ? List<String>.from(json['tags']) : [],
     );
   }
 
@@ -133,8 +144,6 @@ class AnnotateTaskModel {
       'type': type.repr,
       'status': status.repr,
       'data_ids': dataIds,
-      'data_type': dataType.repr,
-      'data_path': dataPath,
       'commits': commits,
       'last_updated': lastUpdated.toIso8601String(),
       'annotate_fields': annotateFields.map((e) => e.toJson()).toList(),
@@ -190,9 +199,7 @@ class AnnotateAssetModel {
             (field) => AnnotateFieldModel.fromJson(field),
           )
           .toList(),
-      tags: json['tags'] != null
-          ? List<String>.from(json['tags'])
-          : [],
+      tags: json['tags'] != null ? List<String>.from(json['tags']) : [],
     );
   }
 
@@ -204,8 +211,6 @@ class AnnotateAssetModel {
     return modality;
   }
 }
-
-
 
 // UTILITIES
 AnnotateModalityEnum modalityFromString(String str) {

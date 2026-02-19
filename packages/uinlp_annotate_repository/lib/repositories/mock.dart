@@ -10,7 +10,7 @@ import 'package:uinlp_annotate_repository/models/user_stats.dart';
 import 'package:uinlp_annotate_repository/repositories/base.dart';
 
 final class UinlpAnnotateRepositoryMock extends UinlpAnnotateRepository {
-  final client = Dio(BaseOptions(baseUrl: "http://10.54.227.218:8000/"));
+  final client = Dio(BaseOptions(baseUrl: "http://10.54.227.218:8000/v1/"));
   final store = AnnotateLocalStore("mockdb.db");
 
   @override
@@ -86,14 +86,8 @@ final class UinlpAnnotateRepositoryMock extends UinlpAnnotateRepository {
     final assetDir = Directory("${(await getWorkspaceDirectory()).path}/${asset.id}");
     await assetDir.create(recursive: true);
     await extractFileToDisk(savedPath, assetDir.path);
-    // Read metadata from metadata.json in assetDir if exists
-    Map<String, dynamic> metadata = {};
-    final metadataFile = File("${assetDir.path}/metadata.json");
-    if (metadataFile.existsSync()) {
-      metadata = jsonDecode(metadataFile.readAsStringSync());
-    }
     List<String> dataIds = [];
-    final dataDir = Directory("${assetDir.path}/${metadata["data_path"] ?? "data"}");
+    final dataDir = Directory("${assetDir.path}/data");
     if (dataDir.existsSync()) {
       dataIds = dataDir
           .listSync()
@@ -109,20 +103,13 @@ final class UinlpAnnotateRepositoryMock extends UinlpAnnotateRepository {
       description: asset.description,
       type: asset.type,
       status: TaskStatusEnum.inProgress,
-      // totalData: Directory("${assetDir.path}/${metadata["data_path"] ?? "data"}").listSync().length,
       dataIds: dataIds,
       lastUpdated: DateTime.now(),
-      dataType: modalityFromString(metadata["data_type"] ?? "text"),
-      dataPath: metadata["data_path"] ?? "data",
       annotateFields: asset.annotateFields,
-      tags: metadata["tags"] != null
-          ? List<String>.from(metadata["tags"])
-          : [],
+      tags: asset.tags,
     );
     // Store task as a task.json file in assetDir
-    final File taskFile = File("${assetDir.path}/task.json");
-    await taskFile.writeAsString(jsonEncode(task.toJson()));
-    // store.insertTask(task);
+    await task.saveTaskFile();
     // Return updated task
     return task;
   }
