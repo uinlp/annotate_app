@@ -101,28 +101,22 @@ class AnnotateTaskModel {
   double get progress =>
       commits.isEmpty ? 0.0 : (commits.length / dataIds.length);
 
-  Future<File> retrieveDataFileValue(int dataIndex) async {
+  Future<File> loadDataFile(int dataIndex) async {
     final workingDir = await getWorkspaceDirectory();
     print(
       "Working directory: ${workingDir.listSync().map((e) => e.path).toList()}",
     );
     final file = File("${workingDir.path}/$id/data/${dataIds[dataIndex]}");
     return file;
-    // .readAsStringSync(); // TODO: I think to return the file instead, later
-  }
-
-  Future<String> loadDataFieldText(String dataId, String fieldName) async {
-    return commits[dataId]?[fieldName] ?? "";
   }
 
   Future<File> loadDataFieldFile(
-    String dataId,
-    String fieldName,
-    AnnotateModalityEnum modality,
+    int dataIndex,
+    AnnotateFieldModel field,
   ) async {
     final workingDir = await getWorkspaceDirectory();
     final file = File(
-      "${workingDir.path}/$id/media/$dataId/$fieldName.${modality.ext}",
+      "${workingDir.path}/$id/media/${dataIds[dataIndex]}/${field.name}.${field.modality.ext}",
     );
     return file;
   }
