@@ -13,14 +13,14 @@ class AnnotateAssetScreen extends StatelessWidget {
   const AnnotateAssetScreen({super.key, required this.routerState});
   final GoRouterState routerState;
 
-  static const routeName = "annotate-task-list";
+  static const routeName = "annotate-assets-list";
 
-  static const typeQueryParam = "type";
+  static const modalityQueryParam = "modality";
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("$type Assets")),
+      appBar: AppBar(title: Text("$modality Assets")),
       body: BlocListener<AnnotateTaskBloc, AnnotateTaskState>(
         listenWhen: (previous, current) {
           return current.status.event is CreateAnnotateTaskEvent;
@@ -30,9 +30,8 @@ class AnnotateAssetScreen extends StatelessWidget {
             showDialog(
               context: context,
               barrierDismissible: false,
-              builder: (context) => const Center(
-                child: CircularProgressIndicator(),
-              ),
+              builder: (context) =>
+                  const Center(child: CircularProgressIndicator()),
             );
           }
           if (state.status is SuccessStatus) {
@@ -49,7 +48,9 @@ class AnnotateAssetScreen extends StatelessWidget {
               context: context,
               builder: (context) => AlertDialog(
                 title: const Text("Error"),
-                content: Text("Failed to create annotate task:\n${errorStatus.data.message}"),
+                content: Text(
+                  "Failed to create annotate task:\n${errorStatus.data.message}",
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
@@ -103,11 +104,11 @@ class AnnotateAssetScreen extends StatelessWidget {
     );
   }
 
-  String get type {
-    final rawType = routerState.uri.queryParameters[typeQueryParam];
-    if (rawType == null) return "Annotate";
-    return TaskTypeEnum.values
-        .firstWhere((e) => e.repr == rawType)
+  String get modality {
+    final raw = routerState.uri.queryParameters[modalityQueryParam];
+    if (raw == null) return "Annotate";
+    return AnnotateModalityEnum.values
+        .firstWhere((e) => e.repr == raw)
         .repr
         .toTitleCase(sep: '_');
   }
@@ -131,10 +132,12 @@ class AnnotateAssetModal extends StatelessWidget {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: getTypeColor(asset.type).withAlpha(25),
+                  backgroundColor: getModalityColor(
+                    asset.modality,
+                  ).withAlpha(25),
                   child: Icon(
-                    getTypeIcon(asset.type),
-                    color: getTypeColor(asset.type),
+                    getModalityIcon(asset.modality),
+                    color: getModalityColor(asset.modality),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -143,7 +146,7 @@ class AnnotateAssetModal extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        asset.title,
+                        asset.name,
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),

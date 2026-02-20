@@ -1,16 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:uinlp_annotate_repository/repositories/base.dart';
 
 enum TaskStatusEnum { todo, inProgress, completed }
 
 enum TaskTypeEnum { imageToText, textToText }
 
-enum AnnotateFieldTypeEnum { text, audio }
-
-enum AnnotateModalityEnum { image, text, audio }
+enum AnnotateModalityEnum { image, text, audio, video }
 
 extension EnumExtension on Enum {
   // separate the enum name(camelCase) with an underscore
@@ -23,6 +20,21 @@ extension EnumExtension on Enum {
       .toLowerCase();
 }
 
+extension AnnotateModalityEnumExtension on AnnotateModalityEnum {
+  String get ext {
+    switch (this) {
+      case AnnotateModalityEnum.image:
+        return "jpg";
+      case AnnotateModalityEnum.text:
+        return "txt";
+      case AnnotateModalityEnum.audio:
+        return "wav";
+      case AnnotateModalityEnum.video:
+        return "mp4";
+    }
+  }
+}
+
 extension StringConverterExtension on String {
   String toTitleCase({String sep = " ", String join = " "}) => split(
     sep,
@@ -31,37 +43,39 @@ extension StringConverterExtension on String {
 
 class AnnotateFieldModel {
   final String name;
-  final AnnotateModalityEnum type;
+  final AnnotateModalityEnum modality;
   final String description;
 
   const AnnotateFieldModel({
     required this.name,
-    required this.type,
+    required this.modality,
     required this.description,
   });
 
   factory AnnotateFieldModel.fromJson(Map<String, dynamic> json) {
     return AnnotateFieldModel(
       name: json['name'],
-      // type: AnnotateFieldTypeEnum.values.firstWhere(
-      //   (e) => e.repr.toLowerCase() == json['type'].toLowerCase(),
-      // ),
-      type: modalityFromString(json['type']),
+      modality: modalityFromString(json['modality']),
       description: json['description'],
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'type': type.repr, 'description': description};
+    return {
+      'name': name,
+      'modality': modality.repr,
+      'description': description,
+    };
   }
 }
 
 class AnnotateTaskModel {
   final String id;
-  final String dataId;
-  final String title;
+  final String datasetId;
+  final String datasetBatchKey;
+  final String name;
   final String description;
-  final TaskTypeEnum type;
+  final AnnotateModalityEnum modality;
   final TaskStatusEnum status;
   final List<String> dataIds;
   final DateTime lastUpdated;
@@ -71,10 +85,11 @@ class AnnotateTaskModel {
 
   AnnotateTaskModel({
     required this.id,
-    required this.dataId,
-    required this.title,
+    required this.datasetId,
+    required this.datasetBatchKey,
+    required this.name,
     required this.description,
-    required this.type,
+    required this.modality,
     required this.status,
     required this.dataIds,
     required this.lastUpdated,
@@ -86,16 +101,36 @@ class AnnotateTaskModel {
   double get progress =>
       commits.isEmpty ? 0.0 : (commits.length / dataIds.length);
 
-  Future<String> retrieveDataFileValue(int dataIndex) async {
+  Future<File> retrieveDataFileValue(int dataIndex) async {
     final workingDir = await getWorkspaceDirectory();
     print(
       "Working directory: ${workingDir.listSync().map((e) => e.path).toList()}",
     );
     final file = File("${workingDir.path}/$id/data/${dataIds[dataIndex]}");
-    return file.readAsStringSync();
+    return file;
+    // .readAsStringSync(); // TODO: I think to return the file instead, later
   }
 
-  Future<void> updateCommit(String dataId, Map<String, dynamic> commitData) async {
+  Future<String> loadDataFieldText(String dataId, String fieldName) async {
+    return commits[dataId]?[fieldName] ?? "";
+  }
+
+  Future<File> loadDataFieldFile(
+    String dataId,
+    String fieldName,
+    AnnotateModalityEnum modality,
+  ) async {
+    final workingDir = await getWorkspaceDirectory();
+    final file = File(
+      "${workingDir.path}/$id/media/$dataId/$fieldName.${modality.ext}",
+    );
+    return file;
+  }
+
+  Future<void> updateCommit(
+    String dataId,
+    Map<String, dynamic> commitData,
+  ) async {
     // commits[dataId] = commitData;
     commits.update(dataId, (value) => commitData, ifAbsent: () => commitData);
     // Save task file asynchronously
@@ -112,11 +147,12 @@ class AnnotateTaskModel {
   factory AnnotateTaskModel.fromJson(Map<String, dynamic> json) {
     return AnnotateTaskModel(
       id: json['id'],
-      dataId: json['data_id'],
-      title: json['title'],
+      datasetId: json['dataset_id'],
+      datasetBatchKey: json['dataset_batch_key'],
+      name: json['name'],
       description: json['description'],
-      type: TaskTypeEnum.values.firstWhere(
-        (e) => e.repr.toLowerCase() == json['type'].toLowerCase(),
+      modality: AnnotateModalityEnum.values.firstWhere(
+        (e) => e.repr.toLowerCase() == json['modality'].toLowerCase(),
       ),
       status: TaskStatusEnum.values.firstWhere(
         (e) => e.repr.toLowerCase() == json['status'].toLowerCase(),
@@ -138,10 +174,11 @@ class AnnotateTaskModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'data_id': dataId,
-      'title': title,
+      'dataset_id': datasetId,
+      'dataset_batch_key': datasetBatchKey,
+      'name': name,
       'description': description,
-      'type': type.repr,
+      'modality': modality.repr,
       'status': status.repr,
       'data_ids': dataIds,
       'commits': commits,
@@ -154,7 +191,7 @@ class AnnotateTaskModel {
   Set<String> get modalitySet {
     final modality = <String>{};
     for (var field in annotateFields) {
-      modality.add(field.type.repr.toTitleCase(sep: '_'));
+      modality.add(field.modality.repr.toTitleCase(sep: '_'));
     }
     return modality;
   }
@@ -162,35 +199,40 @@ class AnnotateTaskModel {
 
 class AnnotateAssetModel {
   final String id;
-  final String dataId;
-  final TaskTypeEnum type;
-  final String title;
+  final String datasetId;
+  final String datasetBatchKey;
+  final AnnotateModalityEnum modality;
+  final String name;
   final String description;
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<AnnotateFieldModel> annotateFields;
   final List<String> tags;
+  final List<String> publishers;
 
   const AnnotateAssetModel({
     required this.id,
-    required this.dataId,
-    required this.type,
-    required this.title,
+    required this.datasetId,
+    required this.datasetBatchKey,
+    required this.modality,
+    required this.name,
     required this.description,
     required this.createdAt,
     required this.updatedAt,
     required this.annotateFields,
     this.tags = const [],
+    this.publishers = const [],
   });
 
   factory AnnotateAssetModel.fromJson(Map<String, dynamic> json) {
     return AnnotateAssetModel(
       id: json['id'],
-      dataId: json['data_id'],
-      type: TaskTypeEnum.values.firstWhere(
-        (e) => e.repr.toLowerCase() == json['type'].toLowerCase(),
+      datasetId: json['dataset_id'],
+      datasetBatchKey: json['dataset_batch_key'],
+      modality: AnnotateModalityEnum.values.firstWhere(
+        (e) => e.repr.toLowerCase() == json['modality'].toLowerCase(),
       ),
-      title: json['title'],
+      name: json['name'],
       description: json['description'],
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
@@ -200,13 +242,16 @@ class AnnotateAssetModel {
           )
           .toList(),
       tags: json['tags'] != null ? List<String>.from(json['tags']) : [],
+      publishers: json['publishers'] != null
+          ? List<String>.from(json['publishers'])
+          : [],
     );
   }
 
   Set<String> get modalitySet {
     final modality = <String>{};
     for (var field in annotateFields) {
-      modality.add(field.type.repr.toTitleCase(sep: '_'));
+      modality.add(field.modality.repr.toTitleCase(sep: '_'));
     }
     return modality;
   }
@@ -217,4 +262,14 @@ AnnotateModalityEnum modalityFromString(String str) {
   return AnnotateModalityEnum.values.firstWhere(
     (e) => e.repr.toLowerCase() == str.toLowerCase(),
   );
+}
+
+class DatasetBatchDownloadModel {
+  final String url;
+
+  const DatasetBatchDownloadModel({required this.url});
+
+  factory DatasetBatchDownloadModel.fromJson(Map<String, dynamic> json) {
+    return DatasetBatchDownloadModel(url: json['url']);
+  }
 }

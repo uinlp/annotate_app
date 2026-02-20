@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,7 @@ import 'package:uinlp_annotate/features/annotate_task/bloc/annotate_task_bloc.da
 import 'package:uinlp_annotate/features/main/screens/dashboard_screen.dart';
 import 'package:uinlp_annotate/utilities/helper.dart';
 import 'package:uinlp_annotate_repository/models/annotate_task.dart';
+import 'package:uinlp_annotate_repository/uinlp_annotate_repository.dart';
 
 class AnnotateEditorScreen extends StatefulWidget {
   const AnnotateEditorScreen({super.key, required this.routerState});
@@ -41,7 +44,7 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
               .map(
                 (e) => AnnotateFieldStateModel(
                   name: e.name,
-                  type: e.type,
+                  modality: e.modality,
                   description: e.description,
                 ),
               )
@@ -49,27 +52,34 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
         }
       });
 
-      loadCurrentDataAnnotations();
+      // load current fields on init
+      loadCurrentFields();
 
+      // load current fields on data index change
       currentDataIndex.addListener(() {
         debugPrint("Current data index changed: ${currentDataIndex.value}");
-        loadCurrentDataAnnotations();
+        loadCurrentFields();
       });
     });
   }
 
-  void loadCurrentDataAnnotations() {
+  void loadCurrentFields() async {
     final state = context.read<AnnotateTaskBloc>().state;
     final task = state.tasks.where((e) => e.id == taskId).firstOrNull;
     if (task == null) return;
-    final dataId = task.dataIds[currentDataIndex.value];
-    final commitData = task.commits[dataId];
     for (var field in fields) {
-      if (field.type == AnnotateModalityEnum.text) {
-        field.textController?.text = commitData?[field.name] ?? "";
-      } else if (field.type == AnnotateModalityEnum.audio) {
-        field.audioCachePath?.value =
-            commitData?[field.name] ?? "media/${field.name}/$dataId.wav";
+      field.file.value = await task.loadDataFieldFile(
+        currentDataIndex.value,
+        field,
+      );
+      if (field.file.value.existsSync()) {
+        if (field.modality == AnnotateModalityEnum.text) {
+          field.value.value = await field.file.value.readAsString();
+        } else {
+          field.value.value = await field.file.value.readAsBytes();
+        }
+      } else {
+        field.value.value = null;
       }
     }
   }
@@ -109,28 +119,41 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
     if (task == null) return false;
     Map<String, dynamic> commitData = {};
     for (var field in fields) {
-      if (field.type == AnnotateModalityEnum.text) {
-        if (field.textController == null || field.textController!.text.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Field '${field.name}' cannot be empty."),
-            ),
-          );
-          return false;
-        }
-        commitData[field.name] = field.textController?.text ?? "";
-      } else if (field.type == AnnotateModalityEnum.audio) {
-        if (field.audioCachePath == null ||
-            field.audioCachePath!.value.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Audio for field '${field.name}' is missing."),
-            ),
-          );
-          return false;
-        }
-        commitData[field.name] = field.audioCachePath?.value ?? "";
+      // if (field.modality == AnnotateModalityEnum.text) {
+      //   if (field.textController == null ||
+      //       field.textController!.text.isEmpty) {
+      //     ScaffoldMessenger.of(context).showSnackBar(
+      //       SnackBar(content: Text("Field '${field.name}' cannot be empty.")),
+      //     );
+      //     return false;
+      //   }
+      //   commitData[field.name] = field.textController?.text ?? "";
+      // } else if (field.modality == AnnotateModalityEnum.audio) {
+      //   if (!(field.audioFile?.value.existsSync() ?? false)) {
+      //     ScaffoldMessenger.of(context).showSnackBar(
+      //       SnackBar(
+      //         content: Text("Audio for field '${field.name}' is missing."),
+      //       ),
+      //     );
+      //     return false;
+      //   }
+      //   commitData[field.name] = field.audioFile?.value.path ?? "";
+      // }
+      if (field.value.value == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Field '${field.name}' cannot be empty.")),
+        );
+        return false;
       }
+      if (!field.file.value.existsSync()) {
+        field.file.value.createSync(recursive: true);
+      }
+      if (field.modality == AnnotateModalityEnum.text) {
+        field.file.value.writeAsStringSync(field.value.value ?? "");
+      } else {
+        field.file.value.writeAsBytesSync(field.value.value ?? []);
+      }
+      commitData[field.name] = field.file.value.path;
     }
     await task.updateCommit(task.dataIds[currentDataIndex.value], commitData);
     return true;
@@ -153,8 +176,8 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
   void dispose() {
     currentDataIndex.dispose();
     for (var field in fields) {
-      field.textController?.dispose();
-      field.audioCachePath?.dispose();
+      field.value.dispose();
+      field.file.dispose();
     }
     super.dispose();
   }
@@ -168,7 +191,7 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
           valueListenable: currentDataIndex,
           builder: (context, value, child) {
             return Text("Annotate Editor [${currentDataIndex.value + 1}]");
-          }
+          },
         ),
         actions: [
           Builder(
@@ -199,21 +222,34 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
                 return DataDisplay(
                   taskId: taskId,
                   currentDataIndex: currentDataIndex.value,
+                  modality: AnnotateModalityEnum.text,
                 );
-              }
+              },
             ),
             for (var field in fields)
               // Text(field.name),
-              if (field.type == AnnotateModalityEnum.text)
-                TextField(
-                  controller: field.textController,
-                  decoration: InputDecoration(
-                    labelText: field.name.toTitleCase(),
-                    hintText: field.description,
-                  ),
-                )
-              else if (field.type == AnnotateModalityEnum.audio)
-                Container(
+              switch (field.modality) {
+                AnnotateModalityEnum.text => ValueListenableBuilder(
+                  key: ValueKey(field.name),
+                  valueListenable: field.value,
+                  builder: (context, value, child) {
+                    return TextField(
+                      controller: TextEditingController(text: value),
+                      style: value != null && value.isNotEmpty
+                          ? TextStyle(fontWeight: FontWeight.w500)
+                          : null,
+                      onSubmitted: (value) {
+                        field.value.value = value;
+                      },
+                      decoration: InputDecoration(
+                        labelText: field.name.toTitleCase(),
+                        hintText: field.description,
+                        counterText: "${value?.length ?? 0} chars",
+                      ),
+                    );
+                  },
+                ),
+                _ => Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainer,
@@ -223,12 +259,13 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
                   child: Row(
                     children: [
                       Text(
-                        "Audio Recording Field (#TODO)",
+                        "${field.modality.repr} Field (#TODO)",
                         style: theme.textTheme.bodyLarge,
                       ),
                     ],
                   ),
                 ),
+              },
           ],
         ),
       ),
@@ -243,7 +280,7 @@ class _AnnotateEditorScreenState extends State<AnnotateEditorScreen> {
               context.pop();
             },
           );
-        }
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -436,10 +473,12 @@ class DataDisplay extends StatelessWidget {
     super.key,
     required this.taskId,
     required this.currentDataIndex,
+    required this.modality,
   });
 
   final String? taskId;
   final int currentDataIndex;
+  final AnnotateModalityEnum modality;
 
   @override
   Widget build(BuildContext context) {
@@ -465,7 +504,7 @@ class DataDisplay extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: FutureBuilder(
-              future: state.retrieveDataFileValue(currentDataIndex),
+              future: state.loadDataFile(currentDataIndex),
               builder: (context, asyncSnapshot) {
                 if (asyncSnapshot.hasError) {
                   return Text(
@@ -476,10 +515,25 @@ class DataDisplay extends StatelessWidget {
                 if (!asyncSnapshot.hasData) {
                   return const CircularProgressIndicator();
                 }
-                return Text(
-                  asyncSnapshot.data as String,
-                  style: theme.textTheme.headlineMedium,
-                );
+                switch (modality) {
+                  case AnnotateModalityEnum.text:
+                    return Text(
+                      asyncSnapshot.data!.readAsStringSync().trim(),
+                      style: theme.textTheme.headlineMedium,
+                    );
+                  // case AnnotateModalityEnum.audio:
+                  //   return AudioPlayer(
+                  //     audioUrl: asyncSnapshot.data!.path,
+                  //   );
+                  // case AnnotateModalityEnum.image:
+                  //   return Image.file(asyncSnapshot.data!);
+                  // case AnnotateModalityEnum.video:
+                  //   return VideoPlayer(
+                  //     videoUrl: asyncSnapshot.data!.path,
+                  //   );
+                  default:
+                    return Text("Modality not supported $modality");
+                }
               },
             ),
           ),
@@ -556,12 +610,12 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: getTypeColor(task!.type).withAlpha(25),
+                          color: getModalityColor(task.modality).withAlpha(25),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          getTypeIcon(task!.type),
-                          color: getTypeColor(task.type),
+                          getModalityIcon(task.modality),
+                          color: getModalityColor(task.modality),
                           size: 28,
                         ),
                       ),
@@ -571,7 +625,7 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              task!.title,
+                              task.name,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -589,7 +643,7 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                task!.status.name.toUpperCase(),
+                                task.status.name.toUpperCase(),
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: getStatusColor(task!.status),
                                   fontWeight: FontWeight.bold,
@@ -708,7 +762,6 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                               children: [
                                 Row(
                                   children: [
-                                    const SizedBox(width: 8),
                                     Text(
                                       field.name.toTitleCase(),
                                       style: theme.textTheme.titleSmall
@@ -728,7 +781,9 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        field.type.repr.toTitleCase(sep: '_'),
+                                        field.modality.repr.toTitleCase(
+                                          sep: '_',
+                                        ),
                                         style: theme.textTheme.labelSmall
                                             ?.copyWith(
                                               color: theme.colorScheme.primary,
@@ -765,16 +820,12 @@ class AnnotateEditorEndDrawer extends StatelessWidget {
 class AnnotateFieldStateModel extends AnnotateFieldModel {
   AnnotateFieldStateModel({
     required super.name,
-    required super.type,
+    required super.modality,
     required super.description,
-    TextEditingController? textController,
-    ValueNotifier<String>? audioCachePath,
-  }) : textController = type == AnnotateModalityEnum.text
-           ? (textController ?? TextEditingController())
-           : null,
-       audioCachePath = type == AnnotateModalityEnum.audio
-           ? (audioCachePath ?? ValueNotifier<String>("cache/$name.wav"))
-           : null;
-  final TextEditingController? textController;
-  final ValueNotifier<String>? audioCachePath;
+    ValueNotifier<dynamic>? value,
+    ValueNotifier<File>? file,
+  }) : value = value ?? ValueNotifier<dynamic>(null),
+       file = file ?? ValueNotifier<File>(File(""));
+  final ValueNotifier<dynamic> value;
+  final ValueNotifier<File> file;
 }

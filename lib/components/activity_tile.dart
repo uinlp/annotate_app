@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uinlp_annotate/utilities/helper.dart';
 import 'package:uinlp_annotate_repository/models/annotate_task.dart';
 
 class ActivityTile extends StatelessWidget {
@@ -28,21 +29,15 @@ class ActivityTile extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
-          backgroundColor: task.type == TaskTypeEnum.imageToText
-              ? Colors.blue.withAlpha(25)
-              : Colors.orange.withAlpha(25),
+          backgroundColor: getModalityColor(task.modality).withAlpha(25),
           child: Icon(
-            task.type == TaskTypeEnum.imageToText
-                ? Icons.image
-                : Icons.text_fields,
-            color: task.type == TaskTypeEnum.imageToText
-                ? Colors.blue
-                : Colors.orange,
+            getModalityIcon(task.modality),
+            color: getModalityColor(task.modality),
             size: 20,
           ),
         ),
         title: Text(
-          task.title,
+          task.name,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),

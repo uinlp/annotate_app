@@ -17,7 +17,10 @@ class MainApp extends StatelessWidget {
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider<UinlpAnnotateRepository>(
-          create: (context) => UinlpAnnotateRepositoryMock(),
+          create: (context) => UinlpAnnotateRepositoryProd(
+            baseUrl:
+                "https://cndwf6gz22.execute-api.af-south-1.amazonaws.com/v1/",
+          ),
           // dispose: (repository) => repository.dispose(),
         ),
       ],

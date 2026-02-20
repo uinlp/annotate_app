@@ -30,15 +30,15 @@ class AssetTile extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
-          backgroundColor: getTypeColor(asset.type).withAlpha(25),
+          backgroundColor: getModalityColor(asset.modality).withAlpha(25),
           child: Icon(
-            getTypeIcon(asset.type),
-            color: getTypeColor(asset.type),
+            getModalityIcon(asset.modality),
+            color: getModalityColor(asset.modality),
             size: 20,
           ),
         ),
         title: Text(
-          asset.title,
+          asset.name,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),

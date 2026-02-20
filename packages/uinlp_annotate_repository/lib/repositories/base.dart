@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,15 +10,32 @@ import 'package:uinlp_annotate_repository/models/user_stats.dart';
 abstract base class UinlpAnnotateRepository {
   const UinlpAnnotateRepository();
 
-  Future<void> init();
+  // Future<void> init();
 
-  Future<void> dispose();
+  // Future<void> dispose();
 
   Future<UserStatsModel> getUserStatsModel();
   Future<List<AnnotateTaskModel>> getRecentTasks({
     int limit = 10,
     int offset = 0,
-  });
+    TaskTypeEnum? type,
+  }) async {
+    // return store.selectTasks();
+    print("Getting recent tasks from workspace directory");
+    final workspaceDir = await getWorkspaceDirectory();
+    final tasks = <AnnotateTaskModel>[];
+    for (final file in workspaceDir.listSync()) {
+      if (file is Directory && file.path.contains("task.json")) {
+        final taskFile = File("${file.path}/task.json");
+        if (taskFile.existsSync()) {
+          final taskJson = jsonDecode(taskFile.readAsStringSync());
+          tasks.add(AnnotateTaskModel.fromJson(taskJson));
+        }
+      }
+    }
+    return tasks;
+  }
+
   Future<List<AnnotateAssetModel>> getRecentAssets({
     int limit = 10,
     int offset = 0,
@@ -73,9 +91,9 @@ class AnnotateLocalStore {
     ''',
       [
         task.id,
-        task.title,
+        task.name,
         task.description,
-        task.type.repr,
+        task.modality.repr,
         task.status.repr,
         task.progress,
         task.lastUpdated.toIso8601String(),
@@ -96,7 +114,7 @@ class AnnotateLocalStore {
       INSERT INTO fields (name, type, description, task_id)
       VALUES (?, ?, ?, ?);
     ''',
-      [field.name, field.type.repr, field.description, taskId],
+      [field.name, field.modality.repr, field.description, taskId],
     );
   }
 

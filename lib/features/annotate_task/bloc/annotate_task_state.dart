@@ -12,9 +12,9 @@ class AnnotateTaskState {
     );
   }
 
-  List<AnnotateTaskModel> filteredTasks(TaskTypeEnum type) {
+  List<AnnotateTaskModel> filteredTasks(AnnotateModalityEnum modality) {
     return tasks.where((element) {
-      return element.type == type;
+      return element.modality == modality;
     }).toList();
   }
 }

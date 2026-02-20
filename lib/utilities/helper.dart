@@ -12,20 +12,28 @@ Color getStatusColor(TaskStatusEnum status) {
   }
 }
 
-Color getTypeColor(TaskTypeEnum type) {
-  switch (type) {
-    case TaskTypeEnum.imageToText:
+Color getModalityColor(AnnotateModalityEnum modality) {
+  switch (modality) {
+    case AnnotateModalityEnum.image:
       return Colors.blue;
-    case TaskTypeEnum.textToText:
+    case AnnotateModalityEnum.text:
       return Colors.orange;
+    case AnnotateModalityEnum.audio:
+      return Colors.purple;
+    case AnnotateModalityEnum.video:
+      return Colors.red;
   }
 }
 
-IconData getTypeIcon(TaskTypeEnum type) {
-  switch (type) {
-    case TaskTypeEnum.imageToText:
+IconData getModalityIcon(AnnotateModalityEnum modality) {
+  switch (modality) {
+    case AnnotateModalityEnum.image:
       return Icons.image;
-    case TaskTypeEnum.textToText:
+    case AnnotateModalityEnum.text:
       return Icons.text_fields;
+    case AnnotateModalityEnum.audio:
+      return Icons.audio_file;
+    case AnnotateModalityEnum.video:
+      return Icons.video_file;
   }
 }
