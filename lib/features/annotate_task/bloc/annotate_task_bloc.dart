@@ -40,6 +40,11 @@ class AnnotateTaskBloc extends Bloc<AnnotateTaskEvent, AnnotateTaskState> {
       debugPrint("Creating annotate task");
       emit(state.copyWith(status: LoadingStatus(event: event)));
       try {
+        if (state.tasks.where((task) => task.id == event.asset.id).isNotEmpty) {
+          throw RepositoryException(
+            message: "You have already created an annotate task for this asset",
+          );
+        }
         final task = await repository.createAnnotateTask(asset: event.asset);
         debugPrint("Created annotate task: ${task.id}");
         emit(

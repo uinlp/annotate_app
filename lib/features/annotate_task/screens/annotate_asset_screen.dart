@@ -30,8 +30,15 @@ class AnnotateAssetScreen extends StatelessWidget {
             showDialog(
               context: context,
               barrierDismissible: false,
-              builder: (context) =>
-                  const Center(child: CircularProgressIndicator()),
+              builder: (context) => const Center(
+                child: Card(
+                  elevation: 0,
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              ),
             );
           }
           if (state.status is SuccessStatus) {
